@@ -18,21 +18,26 @@ import torch.nn.functional as F
 
 from typing import Union
 from torch import Tensor
-from torch_geometric.nn import GATConv
+import torch_geometric.nn
 
 
 class GATAutoEncoder(nn.Module):
 
-    def __init__(self, input_dim, hidden_dim, embedding_dim, nheads: int = 8):
+    def __init__(self, input_dim: int, hidden_dim: int, embedding_dim: int, nheads: int = 8):
         """
 
-        :param input_dim:
+        :param input_dim: the number of features, e.g.: data.x.shape
         :param hidden_dim:
         :param embedding_dim:
         :param nheads:
         """
         super().__init__()
-        self.encoder = GATConv(in_channels=input_dim, out_channels=hidden_dim, heads=nheads, concat=True, dropout=.3)
+        self.encoder = torch_geometric.nn.GATConv(
+            in_channels=input_dim,
+            out_channels=hidden_dim,
+            heads=nheads, concat=True,
+            dropout=.3
+        )
 
         self.embedding = nn.Linear(in_features=hidden_dim * nheads, out_features=embedding_dim)
 
