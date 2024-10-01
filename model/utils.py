@@ -21,31 +21,51 @@ from torch import Tensor
 import torch_geometric.nn
 
 
+class AnnData2Graph(object):
+    pass
+
+
 class GATAutoEncoder(nn.Module):
 
-    def __init__(self, input_dim: int, hidden_dim: int, embedding_dim: int, nheads: int = 8):
+    def __init__(self, input_dim: int, hidden_dim: int, embedding_dim: int, nheads: int = 8, dropout: float = .3):
         """
 
         :param input_dim: the number of features, e.g.: data.x.shape
         :param hidden_dim:
         :param embedding_dim:
         :param nheads:
+        :param dropout:
         """
         super().__init__()
         self.encoder = torch_geometric.nn.GATConv(
             in_channels=input_dim,
             out_channels=hidden_dim,
-            heads=nheads, concat=True,
+            heads=nheads,
+            concat=True,
+            dropout=.3
+        )
+
+        self.encoder_ = torch_geometric.nn.GATConv(
+            in_channels=hidden_dim * nheads,
+            out_channels=hidden_dim,
+            heads=nheads,
+            concat=True,
             dropout=.3
         )
 
         self.embedding = nn.Linear(in_features=hidden_dim * nheads, out_features=embedding_dim)
 
+        self.embedding_dropout = nn.Dropout(p=dropout)
+
         self.decoder = nn.Sequential(
             nn.Linear(in_features=embedding_dim, out_features=hidden_dim),
             nn.ReLU(),
-            nn.Linear(in_features=hidden_dim, out_features=input_dim)
+            nn.BatchNorm1d(num_features=hidden_dim),
+            nn.Linear(in_features=hidden_dim, out_features=input_dim // 2),
+            nn.ReLU(),
+            nn.Linear(in_features=input_dim // 2, out_features=input_dim)
         )
+
 
     def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Tensor):
         """
@@ -57,7 +77,12 @@ class GATAutoEncoder(nn.Module):
         """
         x = self.encoder(x, edge_index, edge_weight)
         x = F.relu(x)
+
+        x = self.encoder_(x, edge_index, edge_weight)
+        x = F.relu(x)
+
         x = z = self.embedding(x)
+        x = self.embedding_dropout(x)
         x = self.decoder(x)
         return x, z
 
