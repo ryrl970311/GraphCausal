@@ -15,6 +15,9 @@ import scanpy as sc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from typing import Union
+from torch import Tensor
 from torch_geometric.nn import GATConv
 
 
@@ -29,20 +32,22 @@ class GATAutoEncoder(nn.Module):
         :param nheads:
         """
         super().__init__()
-        self.encoder = GATConv(in_channels=input_dim, out_channels=hidden_dim, heads=nheads, concat=True)
+        self.encoder = GATConv(in_channels=input_dim, out_channels=hidden_dim, heads=nheads, concat=True, dropout=.3)
+
         self.embedding = nn.Linear(in_features=hidden_dim * nheads, out_features=embedding_dim)
+
         self.decoder = nn.Sequential(
-            nn.Linear(embedding_dim, hidden_dim),
+            nn.Linear(in_features=embedding_dim, out_features=hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim)
+            nn.Linear(in_features=hidden_dim, out_features=input_dim)
         )
 
-    def forward(self, x, edge_index, edge_weight):
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Tensor):
         """
 
         :param x:
-        :param edge_index:
-        :param edge_weight:
+        :param edge_index: [2, n]
+        :param edge_weight:(n, )
         :return:
         """
         x = self.encoder(x, edge_index, edge_weight)
@@ -51,42 +56,4 @@ class GATAutoEncoder(nn.Module):
         x = self.decoder(x)
         return x, z
 
-    def encode(self, x, edge_index, edge_weight):
-        """
 
-        :param x:
-        :param edge_index:
-        :param edge_weight:
-        :return:
-        """
-        x = self.encoder(x, edge_index, edge_weight)
-        x = self.embedding(x)
-        return x
-
-    def decode(self, x):
-        return self.decoder(x)
-
-    def loss(self, x, x_recon):
-        """
-        :param x: [num_cells, num_genes]
-        :param x_recon: [num_cells, num_genes]
-        :return:
-        """
-        loss = F.mse_loss(x, x_recon)
-        return loss
-
-    def save_model(self, path):
-        """
-
-        :param path:
-        :return:
-        """
-        torch.save(self.state_dict(), path)
-
-    def load_model(self, path):
-        """
-
-        :param path:
-        :return:
-        """
-        self.load_state_dict(torch.load(path))
