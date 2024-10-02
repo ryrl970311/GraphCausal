@@ -9,16 +9,11 @@
 """
 import numpy as np
 import pandas as pd
-import scanpy as sc
 
 from typing import Union
-
 from anndata import AnnData
 from numpy import ndarray
-from numpy.linalg import eig
-from scipy.sparse import diags
 from numpy.linalg import eig, inv
-
 from scipy.stats import spearmanr
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -63,7 +58,19 @@ class SimilarityMatrix:
 
 class NetworkEnhancer:
     def __init__(self, W_in: ndarray, order: float = 2, K: int = None, alpha: float = 0.9):
-        """
+        r"""
+        Network Enhancement (NE), a novel method for improving the signal-to-noise ratio of a symmetric networks
+        and thereby facilitating the downstream network analysis. NE leverages the transitive edges of a network by
+        exploiting local structures to strengthen the signal within clusters and weaken the signal between clusters.
+        At the same time, NE also alleviates the corrupted links in the network by imposing a normalization that removes
+        weak edges by enforcing sparsity. NE is supported by theoretical justifications for its convergence and
+        performance in improving community detection outcomes.
+        The method provides theoretical guarantees as well as excellent empirical performance on many biological
+        problems. The approach can be incorporated into any weighted network analysis pipeline and can lead to improved
+        downstream analysis.
+
+        Reference: Wang, B., Pourshafeie, A., Zitnik, M. et al. Network enhancement as a general method to denoise
+        weighted biological networks. Nat Commun 9, 3108 (2018). https://doi.org/10.1038/s41467-018-05469-x.
 
         Parameters
         ----------
@@ -89,7 +96,7 @@ class NetworkEnhancer:
 
         self.degree_sum = np.sum(np.abs(self.W), axis=0)
 
-        # 计算初始的 W 矩阵
+        # calculate W matrix
         self.W = self.network_enhance_dn(W=self.W, typ='ave')
         self.W = (self.W + self.W.T) / 2
 
@@ -216,9 +223,6 @@ class NetworkEnhancer:
         return W_out
 
 
-
-
-
 class AnnData2Graph(object):
 
     def __init__(self, adata: AnnData):
@@ -227,12 +231,18 @@ class AnnData2Graph(object):
         self.X = adata.to_df().values
 
 
-    def adjacency_matrix(self, similarity: Union[np.array, pd.DataFrame], k: int = 15):
+    @staticmethod
+    def adjacency_matrix(similarity: Union[np.array, pd.DataFrame], k: int = 15) -> ndarray:
         """
 
-        :param similarity:
-        :param k:
-        :return:
+        Parameters
+        ----------
+        similarity: similarity matrix or enhanced similarity matrix
+        k: The numbers of neighbors defined
+
+        Returns
+        -------
+        A adjacency matrix.
         """
         if isinstance(similarity, pd.DataFrame):
             similarity = similarity.values
