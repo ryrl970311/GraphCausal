@@ -90,42 +90,41 @@ class NetworkEnhancer:
         self.degree_sum = np.sum(np.abs(self.W), axis=0)
 
         # 计算初始的 W 矩阵
-        self.W = self.NE_dn(w=self.W, typ='ave')
+        self.W = self.network_enhance_dn(W=self.W, typ='ave')
         self.W = (self.W + self.W.T) / 2
 
 
-        # 根据 W 的唯一值数量决定是否应用 dominateset
         if len(np.unique(self.W)) == 2:
             self.P = self.W.copy()
         else:
             self.P = self.dominateset(
-                aff_matrix=np.abs(self.W),
+                W=np.abs(self.W),
                 NR_OF_KNN=min(self.K, self.W.shape[0] - 1)) * np.sign(self.W
             )
 
-        # 调整 P 矩阵
+        # adjust P matrix
         self.P = self.P + np.eye(self.P.shape[0]) + np.diag(np.sum(np.abs(self.P.T), axis=0))
 
-        # 应用 TransitionFields 函数
+        # apply TransitionFields
         self.P = self.transitionfields(self.P)
 
-        # 进行特征值分解
         self.eigenvalues, self.eigenvectors = eig(self.P)
         self.eigenvalues = np.real(self.eigenvalues) - np.finfo(float).eps
 
-    def NE_dn(self, w: ndarray, typ: str = 'ave'):
+    @staticmethod
+    def network_enhance_dn(W: ndarray, typ: str = 'ave'):
         """
-        Normalized network w
+        Normalized network W
         Parameters
         ----------
-        w
+        W: processed W matrix
         typ: type of normalized, 'ave' or 'gph'
 
         Returns
         -------
         A ndarray
         """
-        w = w * max(w.shape)
+        w = W * max(W.shape)
         D = np.sum(np.abs(w), axis=1) + np.finfo(float).eps
 
         if typ == 'ave':
@@ -141,27 +140,28 @@ class NetworkEnhancer:
 
         return wn
 
-    def dominateset(self, aff_matrix, NR_OF_KNN):
+    @staticmethod
+    def dominateset(W: ndarray, NR_OF_KNN: int):
         r"""
         Keep the first NR_OF_KNN elements with the largest absolute value in each row,
         set the remaining elements to zero, and symmetrize the result.
 
         Parameters
         ----------
-        aff_matrix: numpy.ndarray
+        W: numpy.ndarray, np.abs() transformed normalized matrix
         NR_OF_KNN: int, the number of nearest neighbors to retain for each row.
 
         Returns
         -------
         PNN_matrix: numpy.ndarray, symmetrized matrix.
         """
-        A = -np.sort(-aff_matrix, axis=1)
-        B = np.argsort(-aff_matrix, axis=1)
+        A = -np.sort(-W, axis=1)
+        B = np.argsort(-W, axis=1)
         res = A[:, :NR_OF_KNN]
         loc = B[:, :NR_OF_KNN]
-        N = aff_matrix.shape[0]
+        N = W.shape[0]
         inds = np.repeat(np.arange(N).reshape(N, 1), NR_OF_KNN, axis=1)
-        PNN_matrix1 = np.zeros_like(aff_matrix)
+        PNN_matrix1 = np.zeros_like(W)
         PNN_matrix1[inds.flatten(), loc.flatten()] = res.flatten()
         PNN_matrix = (PNN_matrix1 + PNN_matrix1.T) / 2
         return PNN_matrix
@@ -172,7 +172,7 @@ class NetworkEnhancer:
 
         Parameters
         ----------
-        W: numpy.ndarray
+        W: numpy.ndarray, adjusted matrix
 
         Returns
         -------
@@ -180,7 +180,7 @@ class NetworkEnhancer:
         """
         zeroindex = np.where(np.sum(W, axis=1) == 0)[0]
         W = W * max(W.shape)
-        W = self.NE_dn(W, 'ave')
+        W = self.network_enhance_dn(W, 'ave')
         w = np.sqrt(np.sum(np.abs(W), axis=0) + np.finfo(float).eps)
         W = W / w
         W = W @ W.T
