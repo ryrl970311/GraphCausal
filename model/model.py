@@ -209,26 +209,33 @@ class GraphAttention(nn.Module):
 
 class ClusteringLayer(nn.Module):
 
-    def __init__(self, nclusters: int, model: str = 'q2',
-                 threshold: float = .1, weights = None, alpha: float = 1.0):
+    def __init__(self,
+                 nclusters: int,
+                 model: str = 'q2',
+                 threshold: float = .1,
+                 weights = None,
+                 alpha: float = 1.0):
         """
+        Single-cell graph attentional clustering--scGAC, GAT cluster layer pytorch implementation.
+
+        References: Yi Cheng, Xiuli Ma, scGAC: a graph attentional architecture for clustering single-cell RNA-seq data,
+        Bioinformatics, Volume 38, Issue 8, March 2022, Pages 2187–2193, https://doi.org/10.1093/bioinformatics/btac099.
 
         Parameters
         ----------
         nclusters: The number of cluster
         model:
         threshold:
-        weights:
-        alpha:
+        weights: initial clusters' center
+        alpha: Hyper parameter
         """
         super().__init__()
 
-        self.nclusters = nclusters,
-        # self.N = N,
-        self.threshold = threshold,
-        self.model = model,
+        self.nclusters: int = nclusters,
+        self.threshold: float = threshold,
+        self.model: str = model,
         self.weights = weights,
-        self.alpha = alpha,
+        self.alpha: float = alpha,
 
         self.clusters = nn.Parameter(self.weights) if self.weights is not None else None
 
@@ -245,36 +252,35 @@ class ClusteringLayer(nn.Module):
         """
 
         if self.clusters is None:
-            idx = torch.randperm(x.size(0))[:self.nclusters]
-            initial_clusters = x[idx].detach()  # Avoid the update of these data
+            idx: Tensor = torch.randperm(x.size(0))[:self.nclusters]
+            initial_clusters: Tensor = x[idx].detach()  # Note Avoid the update of these data
             self.clusters = nn.Parameter(initial_clusters)
 
         # Calculate the square of the **Euclidean distance**
-        x_ = x.unsqueeze(dim=1)  # (batch size, 1, feature dim)
-        cluster_ = self.clusters.unsqueeze(dim=0)  # (1, nclusters, feature dim)
-        distances = torch.sum((x_ - cluster_) ** 2, dim=2)  # (batch size, nclusters)
+        x_: Tensor = x.unsqueeze(dim=1)  # (batch size, 1, feature dim)
+        cluster_: Tensor = self.clusters.unsqueeze(dim=0)  # (1, nclusters, feature dim)
+        distances: Tensor = torch.sum((x_ - cluster_) ** 2, dim=2)  # (batch size, nclusters)
 
         q = 1.0 / (1.0 + distances / self.alpha)
-        q = q / torch.sum(q, dim=1, keepdim=True)  # 对每个样本进行归一化
+        q = q / torch.sum(q, dim=1, keepdim=True)  # Normalization for each sample
 
         if self.model == 'q2':
-            q_sum = torch.sum(input=q, dim=0, keepdim=True)  # (1, nclusters)
-            q_ = (q ** 2) / q_sum
-            q_ = q_ / torch.sum(q_, dim=1, keepdim=True)  # Standardized
+            q_sum: Tensor = torch.sum(input=q, dim=0, keepdim=True)  # (1, nclusters)
+            q_: Tensor = (q ** 2) / q_sum
+            q_: Tensor = q_ / torch.sum(q_, dim=1, keepdim=True)  # Standardized
         else:
-            q_ = q + np.finfo(float).eps
+            q_: Tensor = q + np.finfo(float).eps
 
-        qidx = torch.argmax(input=q_, dim=1)
+        qidx = torch.argmax(input=q_, dim=1) # Find the max value for each row
         q_mask = F.one_hot(tensor=qidx, num_classes=self.nclusters).float()
         q_ = q_mask * q_
 
         q_ = F.relu(input=q_ - self.threshold)
         q_ += torch.sign(q_) * self.threshold
 
-        numerator = torch.mm(input=q_.transpose(dim0=0, dim1=1), mat2=x)  # (nclusters, feature dim)
-        denominator = torch.sum(q_, dim=0, keepdim=True).transpose(dim0=0, dim1=1)  # (nclusters, 1)
-        denominator = denominator + np.finfo(float).eps
+        numerator: Tensor = torch.mm(input=q_.transpose(dim0=0, dim1=1), mat2=x)  # (nclusters, feature dim)
+        denominator: Tensor = torch.sum(q_, dim=0, keepdim=True).transpose(dim0=0, dim1=1)  # (nclusters, 1)
+        denominator: Tensor = denominator + np.finfo(float).eps
         self.clusters.data = numerator / denominator
-
         return q
 
