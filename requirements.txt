@@ -9,3 +9,4 @@ torch~=2.4.1+cpu
 setuptools~=75.1.0
 keras~=3.5.0
 anndata~=0.10.9
+seaborn~=0.13.2

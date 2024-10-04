@@ -7,14 +7,14 @@
 @Time       : 2024/10/1 14:44
 @Describe   :
 """
-import os
 import time
 import torch
 import numpy as np
 import pandas as pd
 import scanpy as sc
-import torch.nn as nn
 
+import torch.nn as nn
+import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
@@ -64,7 +64,7 @@ edge_weight = coef_[edge_index[0], edge_index[1]]
 X = torch.tensor(adata.to_df().values)
 edge_weight = torch.tensor(edge_weight, dtype=torch.float)
 
-data = Data(x=X, edge_index=edge_index, edge_weight=edge_weight)
+data = Data(x=X, edge_index=edge_index, edge_weight=edge_weight,)
 
 edge_index_, edge_weight_ = add_self_loops(
     edge_index=data.edge_index,
@@ -74,5 +74,38 @@ edge_index_, edge_weight_ = add_self_loops(
 )
 
 data = Data(x=data.x, edge_index=edge_index_, edge_attr=edge_weight_)
+data.adj = torch.tensor(data.Adj)
 torch.save(obj=data,
            f='/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/GraphSelfLoops.pt')
+
+data = torch.load('/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/GraphSelfLoops.pt')
+
+model = GATscGAC(in_features=data.x.shape[1], hidden=512, hidden_=1024)
+optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=5e-4)
+loss_fn = torch.nn.MSELoss()
+
+num_epochs = 500
+lst = []
+for epoch in range(num_epochs):
+    model.train()
+    optimizer.zero_grad()
+
+    x, z = model(x=data.x, adj=torch.tensor(data.Adj))
+    loss = loss_fn(x, data.x)
+    loss.backward()
+    optimizer.step()
+
+    lst.append((epoch, loss))
+    if epoch % 10 == 0:
+        print(f'Epoch: {epoch + 1}, Loss: {loss.item(): .4f}')
+
+df = pd.DataFrame(lst, columns=['Epoch', 'Loss'])
+df = df.assign(Loss=df['Loss'].apply(lambda x: x.item()))
+# df.head()
+sns.lineplot(data=df.drop(index=1), x='Epoch', y='Loss')
+
+
+
+
+
+
