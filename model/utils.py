@@ -9,16 +9,16 @@
 """
 import numpy as np
 import pandas as pd
-import scanpy as sc
 
-from typing import Union
+
+from numpy import ndarray
 from anndata import AnnData
-from numpy import ndarray, diag
-from numpy.linalg import eig, inv
+from scipy.linalg import eigh
 from scipy.stats import spearmanr
+from typing import Union, Optional
 from sklearn.decomposition import PCA
+from scipy.sparse import diags, csr_matrix
 from sklearn.metrics.pairwise import cosine_similarity
-# from scGAC_utils import getGraph
 
 
 class SimilarityMatrix:
@@ -58,7 +58,7 @@ class SimilarityMatrix:
         else:
             raise ValueError(f'method or func must be supplied.')
 
-class NetworkEnhancer:
+class NetworkEnhance:
     """
     A class for enhancing network matrices through normalization, constructing nearest neighbor sets,
     computing transition fields, and applying diffusion-based enhancement.
@@ -76,28 +76,32 @@ class NetworkEnhancer:
     Reference: Wang, B., Pourshafeie, A., Zitnik, M. et al. Network enhancement as a general method to denoise
     weighted biological networks. Nat Commun 9, 3108 (2018). https://doi.org/10.1038/s41467-018-05469-x.
 
-    Methods
-    -------
-    dn(w, type_)
-        Normalizes the input matrix based on the specified type.
-    dominateset(aff_matrix, NR_OF_KNN)
-        Constructs a symmetric Pairwise Nearest Neighbor (PNN) matrix from an affinity matrix.
-    transition_fields(W)
-        Computes transition fields based on the input matrix.
-    network_enhancement(W_in, order=2, K=None, alpha=0.9)
-        Enhances the input network matrix using diffusion and normalization techniques.
+    Parameters
+    ----------
+    diffusion_order : float, optional
+        Determines the extent of diffusion. Typical values are 0.5, 1, 2. Default is 2.
+    num_nearest_neighbors : int, optional
+        The number of nearest neighbors. If None, it defaults to min(20, ceil(N / 10)).
+    regularization_alpha : float, optional
+        The regularization parameter. Default is 0.9.
     """
 
+    def __init__(self,
+                 diffusion_order: float = 2, num_nearest_neighbors: int = None, regularization_alpha: float = 0.1):
+        self.diffusion_order = diffusion_order
+        self.num_nearest_neighbors = num_nearest_neighbors
+        self.regularization_alpha = regularization_alpha
+
     @staticmethod
-    def dn(w: np.ndarray, type_: str) -> np.ndarray:
+    def normalize_matrix(input_matrix: np.ndarray, normalization_type: str) -> np.ndarray:
         """
         Normalize the input matrix based on the specified type.
 
         Parameters
         ----------
-        w : np.ndarray
+        input_matrix : np.ndarray
             The input matrix to be normalized.
-        type_ : str
+        normalization_type : str
             The type of normalization to apply. Must be either 'ave' or 'gph'.
 
         Returns
@@ -110,37 +114,37 @@ class NetworkEnhancer:
         ValueError
             If the normalization type is neither 'ave' nor 'gph'.
         """
-        n = w.shape[0]
-        w = w * n
-        w = w.astype(float)
-        D = np.sum(np.abs(w), axis=1) + np.finfo(float).eps
+        num_nodes = input_matrix.shape[0]
+        scaled_matrix = input_matrix * num_nodes
+        scaled_matrix = scaled_matrix.astype(float)
+        degree_sum = np.sum(np.abs(scaled_matrix), axis=1) + np.finfo(float).eps
 
-        if type_ == 'ave':
-            D_inv = 1.0 / D
-            D_sparse = diags(D_inv)
-            wn_sparse = D_sparse.dot(w)
-            wn = wn_sparse.toarray()
-        elif type_ == 'gph':
-            D_inv_sqrt = 1.0 / np.sqrt(D)
-            D_sparse = diags(D_inv_sqrt)
-            intermediate = D_sparse.dot(w)
-            wn_sparse = intermediate.dot(D_sparse)
-            wn = wn_sparse.toarray()
+        if normalization_type == 'ave':
+            degree_inverse = 1.0 / degree_sum
+            degree_sparse_matrix = diags(degree_inverse)
+            normalized_sparse_matrix = degree_sparse_matrix.dot(scaled_matrix)
+            normalized_matrix = normalized_sparse_matrix
+        elif normalization_type == 'gph':
+            degree_inverse_sqrt = 1.0 / np.sqrt(degree_sum)
+            degree_sparse_matrix = diags(degree_inverse_sqrt)
+            intermediate_matrix = degree_sparse_matrix.dot(scaled_matrix)
+            normalized_sparse_matrix = intermediate_matrix.dot(degree_sparse_matrix)
+            normalized_matrix = normalized_sparse_matrix
         else:
             raise ValueError("Invalid type. Must be 'ave' or 'gph'.")
 
-        return wn
+        return normalized_matrix
 
     @staticmethod
-    def dominateset(aff_matrix: np.ndarray, NR_OF_KNN: int) -> np.ndarray:
+    def construct_pairwise_nearest_neighbor_matrix(affinity_matrix: np.ndarray, num_nearest_neighbors: int) -> np.ndarray:
         """
         Constructs a symmetric Pairwise Nearest Neighbor (PNN) matrix from an affinity matrix.
 
         Parameters
         ----------
-        aff_matrix : np.ndarray
+        affinity_matrix : np.ndarray
             The affinity matrix (2D array).
-        NR_OF_KNN : int
+        num_nearest_neighbors : int
             The number of nearest neighbors to consider for each element.
 
         Returns
@@ -153,34 +157,34 @@ class NetworkEnhancer:
         ValueError
             If the affinity matrix is not a 2D array.
         """
-        if aff_matrix.ndim != 2:
-            raise ValueError("aff_matrix must be a 2D array.")
+        if affinity_matrix.ndim != 2:
+            raise ValueError("affinity_matrix must be a 2D array.")
 
-        num_rows, num_cols = aff_matrix.shape
-        sorted_indices = np.argsort(-aff_matrix, axis=1)  # Sort in descending order
-        sorted_values = np.sort(-aff_matrix, axis=1) * -1  # Sort descending
+        num_rows, num_cols = affinity_matrix.shape
+        sorted_neighbor_indices = np.argsort(-affinity_matrix, axis=1)  # Sort in descending order
+        sorted_affinity_values = np.sort(-affinity_matrix, axis=1) * -1  # Sort descending
 
-        res = sorted_values[:, :NR_OF_KNN]
-        loc = sorted_indices[:, :NR_OF_KNN]
-        inds = np.repeat(np.arange(num_rows), NR_OF_KNN)
-        loc_flat = loc.flatten()
-        res_flat = res.flatten()
+        topk_affinity_values = sorted_affinity_values[:, :num_nearest_neighbors]
+        topk_neighbor_indices = sorted_neighbor_indices[:, :num_nearest_neighbors]
+        row_indices = np.repeat(np.arange(num_rows), num_nearest_neighbors)
+        column_indices = topk_neighbor_indices.flatten()
+        affinity_values = topk_affinity_values.flatten()
 
-        PNN_matrix1 = np.zeros_like(aff_matrix, dtype=float)
-        PNN_matrix1[inds, loc_flat] = res_flat
+        pnn_matrix_partial = np.zeros_like(affinity_matrix, dtype=float)
+        pnn_matrix_partial[row_indices, column_indices] = affinity_values
 
-        PNN_matrix = (PNN_matrix1 + PNN_matrix1.T) / 2.0
+        pnn_matrix_symmetrized = (pnn_matrix_partial + pnn_matrix_partial.T) / 2.0
 
-        return PNN_matrix
+        return pnn_matrix_symmetrized
 
     @staticmethod
-    def transition_fields(W: np.ndarray) -> np.ndarray:
+    def compute_transition_fields(input_matrix: np.ndarray) -> np.ndarray:
         """
         Computes transition fields based on the input matrix.
 
         Parameters
         ----------
-        W : np.ndarray
+        input_matrix : np.ndarray
             The input matrix.
 
         Returns
@@ -188,40 +192,46 @@ class NetworkEnhancer:
         np.ndarray
             The transition fields matrix.
         """
-        W = np.array(W, dtype=float)
-        w = np.sqrt(np.sum(np.abs(W), axis=0) + np.finfo(float).eps)
-        w[w == 0] = np.finfo(float).eps  # Prevent division by zero
-        W_normalized = W / w[np.newaxis, :]
-        W = np.dot(W_normalized, W_normalized.T)
+        input_matrix = np.array(input_matrix, dtype=float)
+        normalization_factors = np.sqrt(np.sum(np.abs(input_matrix), axis=0) + np.finfo(float).eps)
+        normalization_factors[normalization_factors == 0] = np.finfo(float).eps  # Prevent division by zero
+        normalized_matrix = input_matrix / normalization_factors[np.newaxis, :]
+        transition_matrix = np.dot(normalized_matrix, normalized_matrix.T)
 
-        Wnew = W.copy()
-        zeroindex = np.where(np.sum(W, axis=1) == 0)[0]
-        if zeroindex.size > 0:
-            Wnew[zeroindex, :] = 0
-            Wnew[:, zeroindex] = 0
+        transition_matrix_copy = transition_matrix.copy()
+        zero_sum_indices = np.where(np.sum(transition_matrix, axis=1) == 0)[0]
+        if zero_sum_indices.size > 0:
+            transition_matrix_copy[zero_sum_indices, :] = 0
+            transition_matrix_copy[:, zero_sum_indices] = 0
 
-        return Wnew
+        return transition_matrix_copy
 
     def network_enhancement(
         self,
-        W_in: np.ndarray,
-        order: float = 2,
-        K: int = None,
-        alpha: float = 0.9
+        input_network_matrix: np.ndarray,
+        diffusion_order: float = None,
+        num_nearest_neighbors: int = None,
+        regularization_alpha: float = None
     ) -> np.ndarray:
         """
         Enhances the input network matrix using diffusion and normalization techniques.
 
         Parameters
         ----------
-        W_in : np.ndarray
+        input_network_matrix : np.ndarray
             The input network matrix of size N x N.
-        order : float, optional
-            Determines the extent of diffusion. Typical values are 0.5, 1, 2. Default is 2.
-        K : int, optional
-            The number of nearest neighbors. If None, it defaults to min(20, ceil(N / 10)).
-        alpha : float, optional
-            The regularization parameter. Default is 0.9.
+        diffusion_order : float, optional
+            Determines the extent of diffusion.
+            Typical values are 0.5, 1, 2.
+            If None, use the value set during initialization.
+        num_nearest_neighbors : int, optional
+            The number of nearest neighbors.
+            If None, it defaults to min(20, ceil(N / 10)).
+            If provided, it overrides the value set during initialization.
+        regularization_alpha : float, optional
+            The regularization parameter.
+            If None, it defaults to 0.9.
+            If provided, it overrides the value set during initialization.
 
         Returns
         -------
@@ -233,78 +243,86 @@ class NetworkEnhancer:
         ValueError
             If input dimensions are inconsistent or parameters are invalid.
         """
-        W_in = np.array(W_in, dtype=float)
-        N = W_in.shape[0]
+        # Use instance parameters if arguments are not provided
+        diffusion_order = self.diffusion_order if diffusion_order is None else diffusion_order
+        num_nearest_neighbors = self.num_nearest_neighbors if num_nearest_neighbors is None else num_nearest_neighbors
+        regularization_alpha = self.regularization_alpha if regularization_alpha is None else regularization_alpha
 
-        # Set default K if not provided
-        if K is None:
-            K = min(20, int(np.ceil(N / 10)))
+        input_network_matrix = np.array(input_network_matrix, dtype=float)
+        num_nodes = input_network_matrix.shape[0]
+
+        # Set default number of nearest neighbors if not provided
+        if num_nearest_neighbors is None:
+            num_nearest_neighbors = min(20, int(np.ceil(num_nodes / 10)))
 
         # Step 1: Remove self-connections by setting diagonal to zero
-        W_in1 = W_in * (1 - np.eye(N))
+        network_without_self_loops = input_network_matrix * (1 - np.eye(num_nodes))
 
         # Step 2: Identify nodes with at least one non-zero connection
-        zeroindex = np.where(np.sum(np.abs(W_in1), axis=1) > 0)[0]
+        active_node_indices = np.where(np.sum(np.abs(network_without_self_loops), axis=1) > 0)[0]
 
-        # Step 3: Extract the submatrix W0 corresponding to non-zero nodes
-        W0 = W_in[np.ix_(zeroindex, zeroindex)]
+        # Step 3: Extract the submatrix corresponding to active nodes
+        subnetwork_matrix = input_network_matrix[np.ix_(active_node_indices, active_node_indices)]
+        #
+        # # Step 4: Normalize the subnetwork using 'ave' type normalization
+        # normalized_subnetwork_matrix = self.normalize_matrix(subnetwork_matrix, 'ave')
 
-        # Step 4: Normalize W0 using 'ave' type normalization
-        W = self.dn(W0, 'ave')
+        # Step 5: Symmetrize the normalized subnetwork
+        symmetrized_normalized_matrix = (subnetwork_matrix + subnetwork_matrix.T) / 2
 
-        # Step 5: Symmetrize W
-        W = (W + W.T) / 2
+        # Step 6: Compute the degree vector as the sum of absolute values across columns
+        degree_vector = np.sum(np.abs(subnetwork_matrix), axis=0)
 
-        # Step 6: Compute DD as the sum of absolute values of W0 across columns
-        DD = np.sum(np.abs(W0), axis=0)
-
-        # Step 7: Determine if W has only two unique values
-        if len(np.unique(W)) == 2:
-            P = W
+        # Step 7: Determine if the normalized subnetwork has only two unique values
+        if len(np.unique(symmetrized_normalized_matrix)) == 2:
+            pairwise_nearest_neighbor_matrix = symmetrized_normalized_matrix
         else:
-            # Compute effective K to avoid exceeding matrix dimensions
-            K_eff = min(K, W.shape[0] - 1)
-            P = self.dominateset(np.abs(W).astype(float), K_eff) * np.sign(W)
+            # Compute effective number of neighbors to avoid exceeding matrix dimensions
+            effective_num_neighbors = min(num_nearest_neighbors, symmetrized_normalized_matrix.shape[0] - 1)
+            pairwise_nearest_neighbor_matrix = self.construct_pairwise_nearest_neighbor_matrix(
+                np.abs(symmetrized_normalized_matrix).astype(float),
+                effective_num_neighbors
+            ) * np.sign(symmetrized_normalized_matrix)
 
         # Step 8: Update P by adding identity and diagonal matrix of row sums
-        P = P + (np.eye(P.shape[0]) + np.diag(np.sum(np.abs(P), axis=1)))
+        row_sums = np.sum(np.abs(pairwise_nearest_neighbor_matrix), axis=1)
+        updated_pairwise_matrix = pairwise_nearest_neighbor_matrix + (np.eye(pairwise_nearest_neighbor_matrix.shape[0]) + np.diag(row_sums))
 
         # Step 9: Apply Transition Fields
-        P = self.transition_fields(P)
+        transition_fields_matrix = self.compute_transition_fields(updated_pairwise_matrix)
 
         # Step 10: Eigen decomposition of P
-        eigenvalues, eigenvectors = np.linalg.eig(P)
+        eigenvalues, eigenvectors = np.linalg.eig(transition_fields_matrix)
         eigenvalues = np.real(eigenvalues)
         eigenvectors = np.real(eigenvectors)
 
         # Step 11: Adjust eigenvalues with regularization parameter alpha
-        eps_val = np.finfo(float).eps
-        d = eigenvalues - eps_val
-        d = (1 - alpha) * d / (1 - alpha * (d ** order))
+        epsilon = np.finfo(float).eps
+        adjusted_eigenvalues = eigenvalues - epsilon
+        adjusted_eigenvalues = (1 - regularization_alpha) * adjusted_eigenvalues / (1 - regularization_alpha * (adjusted_eigenvalues ** diffusion_order))
 
         # Step 12: Reconstruct W using modified eigenvalues
-        D_matrix = np.diag(d)
-        W = eigenvectors @ D_matrix @ eigenvectors.T
+        eigenvalue_matrix = np.diag(adjusted_eigenvalues)
+        reconstructed_matrix = eigenvectors @ eigenvalue_matrix @ eigenvectors.T
 
         # Step 13: Remove self-connections and normalize
-        W = (W * (1 - np.eye(W.shape[0]))) / (1 - np.diag(W))[:, np.newaxis]
+        reconstructed_matrix = (reconstructed_matrix * (1 - np.eye(reconstructed_matrix.shape[0]))) / (1 - np.diag(reconstructed_matrix))[:, np.newaxis]
 
         # Step 14: Apply DD as a diagonal scaling factor
-        D_sparse = diags(DD)
-        W = D_sparse.dot(W)
+        degree_diagonal_matrix = diags(degree_vector)
+        scaled_matrix = degree_diagonal_matrix.dot(reconstructed_matrix)
 
         # Step 15: Set negative values to zero
-        W[W < 0] = 0
+        scaled_matrix[scaled_matrix < 0] = 0
 
         # Step 16: Symmetrize W
-        W = (W + W.T) / 2
+        symmetrized_scaled_matrix = (scaled_matrix + scaled_matrix.T) / 2
 
         # Step 17: Initialize W_out and assign the enhanced W to corresponding indices
-        W_out = np.zeros_like(W_in)
-        W_out[np.ix_(zeroindex, zeroindex)] = W
+        enhanced_network_matrix = np.zeros_like(input_network_matrix)
+        enhanced_network_matrix[np.ix_(active_node_indices, active_node_indices)] = symmetrized_scaled_matrix
 
-        return W_out
-
+        return enhanced_network_matrix
 
 class AnnData2Graph(object):
 
@@ -334,46 +352,6 @@ class AnnData2Graph(object):
         adjacency_matrix[np.arange(similarity.shape[0])[:, np.newaxis], indices] = 1
         return adjacency_matrix
 
-
-# def load_data(fname: str, pca_dim: int, is_NE=True, n_clusters=20, K=None):
-#     # Get data
-#
-#     adata: AnnData = sc.read_h5ad(filename=fname)
-#     cells = adata.obs_names.values
-#     genes = adata.var_names.values
-#     features = adata.to_df()
-#
-#     # Preprocess features
-#     # features = normalization(features)
-#
-#     # Construct graph
-#     N = len(cells)
-#     avg_N = N // n_clusters
-#     K = avg_N // 10
-#     K = min(K, 20)
-#     K = max(K, 6)
-#
-#     L = 0
-#     if is_NE:
-#         method = 'NE'
-#     else:
-#         method = 'pearson'
-#     adj = getGraph(dataset_str, features, L, K, method)
-#
-#     # feature tranformation
-#     if features.shape[0] > pca_dim and features.shape[1] > pca_dim:
-#         pca = PCA(n_components=pca_dim)
-#         features = pca.fit_transform(features)
-#     else:
-#         var = np.var(features, axis=0)
-#         min_var = np.sort(var)[-1 * pca_dim]
-#         features = features.T[var >= min_var].T
-#         features = features[:, :pca_dim]
-#     print('Shape after transformation:', features.shape)
-#
-#     features = (features - np.mean(features)) / (np.std(features))
-#
-#     return adj, features, cells, genes
 
 
 

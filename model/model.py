@@ -284,3 +284,73 @@ class ClusteringLayer(nn.Module):
         self.clusters.data = numerator / denominator
         return q
 
+
+class GATscGAC(nn.Module):
+
+    def __init__(self, in_features: int, hidden: int, hidden_: int, nheads: int = 8, dropout: int = .3):
+        """
+
+        Parameters
+        ----------
+        in_features
+        hidden
+        hidden_
+        nheads
+        dropout
+        """
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        self.gat1 = GraphAttention(
+            in_features=in_features,
+            out_features=hidden,
+            nheads=nheads,
+            nheads_reduction='concat',
+            dropout=self.dropout,
+            activation=F.relu,
+            bias=True
+        )
+
+        self.gat2 = GraphAttention(
+            in_features=hidden * nheads,
+            out_features=hidden_,
+            nheads=nheads,
+            nheads_reduction='concat',
+            dropout=self.dropout,
+            activation=F.relu,
+            bias=True
+        )
+
+        self.gat3 = GraphAttention(
+            in_features=hidden_ * nheads,
+            out_features=hidden,
+            nheads=nheads,
+            nheads_reduction='concat',
+            dropout=self.dropout,
+            activation=F.relu,
+            bias=True
+        )
+
+        self.gat4 = GraphAttention(
+            in_features=hidden * nheads,
+            out_features=in_features,
+            nheads=nheads,
+            nheads_reduction='concat',
+            dropout=self.dropout,
+            activation=F.relu,
+            bias=True
+        )
+
+    def forward(self, x, adj):
+        x = self.dropout(x)
+        x = self.gat1(x, adj)
+
+        x = self.dropout(x)
+        x = self.gat2(x, adj),
+
+        x = self.dropout(x)
+        x = self.gat3(x, adj),
+
+        x = self.dropout(x)
+        x = self.gat4(x, adj)
+        return x
+

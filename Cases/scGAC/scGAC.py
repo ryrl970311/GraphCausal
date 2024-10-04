@@ -138,7 +138,7 @@ graph_attention_4 = GraphAttention(F,
                                    dropout_rate=dropout_rate,
                                    activation='elu',
                                    kernel_regularizer=l1(args.l2_reg),
-                                   attn_kernel_regularizer=l1(args.l2_reg))([dropout4, A_in])
+                    ta               attn_kernel_regularizer=l1(args.l2_reg))([dropout4, A_in])
 
 # Build GAT autoencoder model
 GAT_autoencoder = Model(inputs=[X_in, A_in], outputs=graph_attention_4)
