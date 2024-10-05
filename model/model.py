@@ -119,7 +119,7 @@ class Decoder(nn.Module):
 
             nn.Linear(in_features=out_dim, out_features=out_dim // 2),
             nn.ReLU() if activitation == 'relu' else nn.LeakyReLU(),
-            
+
             nn.Liear(in_features=out_dim // 2, out_features=out_dim),
         )
     
@@ -136,7 +136,7 @@ class Decoder(nn.Module):
         """
         return self.decoder(x)
         
-class GATAutoEncoder(nn.Module):
+class GATAutoEncoderDecoder(nn.Module):
 
     def __init__(
             self,
@@ -228,7 +228,7 @@ class GATAutoEncoder(nn.Module):
             embedding_dim=out_channels,
             out_dim=in_channels,
             activitation='relu'
-        )
+        )  # 重构原始表达数据，学习数据的低纬表示
 
     def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Tensor):
         """
