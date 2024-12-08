@@ -12,18 +12,20 @@ import torch
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import matplotlib.pylab as plt
 
 import torch.nn as nn
 import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from torch_geometric.data import Data
 from torch_geometric.utils import add_self_loops
 
-from model.model import GATscGAC
+from model.model import GATAutoEncoderDecoder
 from model.utils import NetworkEnhance
+from model import utils
 from model.scGAC_utils import getGraph, getNeMatrix
+from torch_geometric.data import Data, ClusterData, ClusterLoader
 
 
 adata = sc.read_h5ad('/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/GEMXHumanPBMC.h5ad')
@@ -79,8 +81,18 @@ torch.save(obj=data,
            f='/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/GraphSelfLoops.pt')
 
 data = torch.load('/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/GraphSelfLoops.pt')
+cluster_data = ClusterData(
+    data=data,
+    num_parts=10,
+    recursive=False,
+    save_dir='/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/cluster'
+)
+model = GATAutoEncoderDecoder(
+    in_channels=data.x.shape[1],
+    hidden_channels=512,
+    out_channels=256,
 
-model = GATscGAC(in_features=data.x.shape[1], hidden=512, hidden_=1024)
+)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=5e-4)
 loss_fn = torch.nn.MSELoss()
 
@@ -90,7 +102,7 @@ for epoch in range(num_epochs):
     model.train()
     optimizer.zero_grad()
 
-    x, z = model(x=data.x, adj=torch.tensor(data.Adj))
+    x, z = model(x=data.x, edge_index=data.edge_index, edge_weight=data.edge_weight)
     loss = loss_fn(x, data.x)
     loss.backward()
     optimizer.step()
@@ -99,10 +111,21 @@ for epoch in range(num_epochs):
     if epoch % 10 == 0:
         print(f'Epoch: {epoch + 1}, Loss: {loss.item(): .4f}')
 
+
+torch.save(model.state_dict(),
+           '/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/model/model_state.pth')
 df = pd.DataFrame(lst, columns=['Epoch', 'Loss'])
 df = df.assign(Loss=df['Loss'].apply(lambda x: x.item()))
+
+df.to_csv(
+    '/public/workspace/ryrl/projects/classmates/ryrl/GraphCausal/10X/train_loss.txt', sep='\t', index=None
+)
+
 # df.head()
 sns.lineplot(data=df.drop(index=1), x='Epoch', y='Loss')
+plt.show()
+
+
 
 
 

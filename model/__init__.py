@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
 """
 @Introduce:
-@File: __ini__.py
+@File: __init__.py
 @Author: ryrl
 @email: ryrl970311@gmail.com
 @Time: 2024/10/1 14:41

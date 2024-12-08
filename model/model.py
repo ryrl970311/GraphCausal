@@ -86,7 +86,7 @@ class Embedding(nn.Module):
         if use_batch_norm:
             self.batch_norm = nn.BatchNorm1d(num_features=out_channels, affine=True)
         
-        nn.xavier_uniform_(self.embedding.weight)
+        nn.init.xavier_uniform_(self.embedding.weight)
         if self.embedding.bias is not None:
             nn.init.zeros_(self.embedding.bias)
         
@@ -120,7 +120,7 @@ class Decoder(nn.Module):
             nn.Linear(in_features=out_dim, out_features=out_dim // 2),
             nn.ReLU() if activitation == 'relu' else nn.LeakyReLU(),
 
-            nn.Liear(in_features=out_dim // 2, out_features=out_dim),
+            nn.Linear(in_features=out_dim // 2, out_features=out_dim),
         )
     
     def forward(self, x: Tensor):
@@ -156,11 +156,17 @@ class GATAutoEncoderDecoder(nn.Module):
 
         Parameters
         ----------
-        input_dim
-        hidden_dim
-        embedding_dim
-        nheads
+        in_channels
+        hidden_channels
+        out_channels
+        heads
         dropout
+        concat
+        negative_slope
+        add_self_loops
+        edge_dim
+        fill_value
+        bias
         """
         super().__init__()
         self.encoder1 = EncoderLayer(

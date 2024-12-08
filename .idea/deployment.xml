@@ -10,6 +10,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="ryrl@10.20.35.107:22 agent (2)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/public/workspace/ryrl/IdeaProjects/GraphCausal" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
     </serverData>
     <option name="myAutoUpload" value="ALWAYS" />
   </component>
