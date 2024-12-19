@@ -12,6 +12,7 @@ import torch
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import scvelo as scv
 import matplotlib.pylab as plt
 
 import torch.nn as nn
@@ -33,6 +34,7 @@ genes = adata.var_names.values
 cells = adata.obs_names.values
 features = adata.to_df().values
 
+sc.read_loom()
 
 coef = np.corrcoef(features, rowvar=True)
 
